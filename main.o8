@@ -78,7 +78,7 @@
 	draw-cursor
 	##endregion
 
-	##region(fold) Game Loop
+	##region Game Loop
 	: game-loop
 	    ##region(fold) Framerate Lock Setup
 	    vf := FRAME_DELAY
