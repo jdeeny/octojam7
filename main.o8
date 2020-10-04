@@ -20,18 +20,23 @@
 #
 ##endregion
 
-##region(fold) Map Constants
+##region(fold) Constants
 :const MAP_WIDTH 15
 :const MAP_HEIGHT 8
 :calc MAP_BYTES { MAP_WIDTH * MAP_HEIGHT }
 
 :calc MAP_X_LIMIT { 8 + 7 * MAP_WIDTH }
 :calc MAP_Y_LIMIT { 8 + 7 * MAP_HEIGHT }
+
+:const FRAME_DELAY 6
 ##endregion
 
+##region(fold) Register Aliases
 :alias cx vD
 :alias cy vE
+##endregion
 
+##region(fold) Math Macros
 :macro set-times-6 DEST SRC {
 	# dest/src MUST be distinct!
 	DEST := SRC  # y
@@ -56,7 +61,92 @@
 	DEST += DEST
 	DEST += DEST
 }
+##endregion
 
+##region Main
+: main
+	##region(fold) Initialization
+	hires	
+	##endregion
+
+	##region(fold) Level Setup
+	draw-map
+
+	cx := 1
+	cy := 2
+
+	draw-cursor
+	##endregion
+
+	##region(fold) Game Loop
+	: game-loop
+	    ##region(fold) Framerate Lock Setup
+	    vf := FRAME_DELAY
+	    delay := vf
+		##endregion
+
+		# undraw cursor
+		draw-cursor
+
+		# move cursor
+    	v0 := OCTO_KEY_A if v0 key then cx += -1
+    	v0 := OCTO_KEY_D if v0 key then cx +=  1
+		v0 := OCTO_KEY_W if v0 key then cy += -1
+    	v0 := OCTO_KEY_S if v0 key then cy +=  1
+
+		if cx == 255 then cx := 0
+		if cx > MAP_WIDTH then cx := MAP_WIDTH
+		if cy == 255 then cy := 0
+		if cy > MAP_HEIGHT then cy := MAP_HEIGHT
+		draw-cursor
+
+		# check other keys
+		v0 := OCTO_KEY_E
+		if v0 key begin
+			# mess with the map at the cursor position
+
+			# what pixel position?
+			set-times-7 v1 cx
+			v1 += 1
+			set-times-7 v2 cy
+			v2 += 1
+
+			# what buffer index?
+			set-times-16 v3 cy
+			v3 += cx
+
+			# undraw what was there
+			i := buffer-world
+			i += v3
+			load v0
+			draw-sprite
+
+			# edit the map and draw the new thing
+			i := buffer-world
+			i += v3
+			if v0 == 255 begin
+				v0 := 0
+				save v0
+			else
+				v0 := 255
+				save v0
+			end
+			draw-sprite
+		end
+
+    ##region(fold) Framerate Lock Wait
+    loop
+		vf := delay
+		if vf != 0 then
+    again
+	##endregion
+
+	jump game-loop
+	##endregion
+##endregion
+
+
+##region(fold) Drawing
 : draw-sprite # draw the sprite with index v0 at position v1,v2
 	# 0xFF indicates an empty space
 	if v0 == 0xFF then return
@@ -68,7 +158,7 @@
 	i += v4
 	sprite v1 v2 6
 	;
-	
+
 : draw-map
 	v3 := 0 # position in buffer
 	v2 := 1 # Y
@@ -96,77 +186,9 @@
 	set-times-7 v2 cy
 	sprite v1 v2 8
 	;
+##endregion
 
-: main
-	hires
-	
-  draw-map
-
-	cx := 1
-	cy := 2
-
-	draw-cursor
-
-  loop
-		# undraw cursor
-		draw-cursor
-
-		# move cursor
-    v0 := OCTO_KEY_A if v0 key then cx += -1
-    v0 := OCTO_KEY_D if v0 key then cx +=  1
-		v0 := OCTO_KEY_W if v0 key then cy += -1
-    v0 := OCTO_KEY_S if v0 key then cy +=  1
-
-		if cx == 255 then cx := 0
-		if cx > MAP_WIDTH then cx := MAP_WIDTH
-		if cy == 255 then cy := 0
-		if cy > MAP_HEIGHT then cy := MAP_HEIGHT
-		
-		draw-cursor
-
-		# check other keys
-		v0 := OCTO_KEY_E
-		if v0 key begin
-			# mess with the map at the cursor position
-			
-			# what pixel position?
-			set-times-7 v1 cx
-			v1 += 1
-			set-times-7 v2 cy
-			v2 += 1
-			
-			# what buffer index?
-			set-times-16 v3 cy
-			v3 += cx
-			
-			# undraw what was there
-			i := buffer-world
-			i += v3
-			load v0
-			draw-sprite
-			
-			# edit the map and draw the new thing
-			i := buffer-world
-			i += v3
-			if v0 == 255 begin
-				v0 := 0
-				save v0
-			else
-				v0 := 255
-				save v0
-			end
-			draw-sprite
-		end
-
-    # lock the framerate of this program via the delay timer:
-    loop
-      vf := delay
-      if vf != 0 then
-    again
-    vf := 6
-    delay := vf
-  again
-
+##region(fold) Game State Data
 : buffer-world
 	0x02 0x00 0x00 0x00 0x00 0x00 0x02 0x00 0x01 0x00 0x01 0xFF 0xFF 0x00 0x00 0x00
 	0x01 0xFF 0x00 0x01 0xFF 0xFF 0xFF 0xFF 0x02 0x00 0x02 0xFF 0x04 0x01 0xFF 0xFF
@@ -177,22 +199,21 @@
 	0x02 0x00 0x02 0x00 0x00 0x00 0x02 0x00 0x01 0x00 0x01 0x03 0xFF 0x00 0x00 0x00
 	0x01 0xFF 0x04 0x01 0xFF 0xFF 0xFF 0xFF 0x02 0x00 0x02 0xFF 0x01 0x01 0xFF 0xFF
 	0x01 0xFF 0x00 0x01 0xFF 0xFF 0xFF 0xFF 0x02 0x00 0x02 0xFF 0x01 0x01 0xFF 0xFF
-:monitor buffer-world MAP_BYTES
 
+:monitor buffer-world MAP_BYTES
+##endregion
+
+##region(fold) Sprite Data
 : cursor
 	0xFF 0x81 0x81 0x81 0x81 0x81 0x81 0xFF
 
 : sprites
-  0x7C 0xF8 0xFC 0xF8 0xF4 0xA8 # 00 stone
-	
+	0x7C 0xF8 0xFC 0xF8 0xF4 0xA8 # 00 stone
 	0x40 0xE8 0x40 0x08 0x5C 0x08 # 01 sparkle
-	
 	0x30 0x30 0xFC 0xFC 0x30 0x30 # 02 plus
-	
 	0x78 0xB4 0xFC 0x00 0x30 0x48 # 03 mr. mushroom
-	
 	0xE0 0xA8 0xE0 0x1C 0x54 0x1C # 04 miner
 	0xE0 0xE0 0xE0 0x1C 0x1C 0x1C
-	
 	0xFC 0x48 0x78 0x48 0x78 0x48 # 06 tower
 	0xFC 0x78 0x78 0x78 0x78 0x48
+##endregion
