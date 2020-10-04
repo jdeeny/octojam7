@@ -21,14 +21,23 @@
 ##endregion
 
 ##region(fold) Constants
+:const FRAME_DELAY 2 # 30 FPS
+
 :const MAP_WIDTH 15
 :const MAP_HEIGHT 8
 :calc MAP_BYTES { MAP_WIDTH * MAP_HEIGHT }
-
 :calc MAP_X_LIMIT { 8 + 7 * MAP_WIDTH }
 :calc MAP_Y_LIMIT { 8 + 7 * MAP_HEIGHT }
 
-:const FRAME_DELAY 6
+
+
+:const KEYBIND_UP OCTO_KEY_W
+:const KEYBIND_DOWN OCTO_KEY_S
+:const KEYBIND_LEFT OCTO_KEY_A
+:const KEYBIND_RIGHT OCTO_KEY_D
+
+
+:const ARROW_REPEAT_RATE_MS 100
 ##endregion
 
 ##region(fold) Register Aliases
@@ -61,6 +70,23 @@
 	DEST += DEST
 	DEST += DEST
 }
+
+# Convert milliseconds to the nearest number of frames (rounds down below 0.5)
+:macro calc-frames-from-ms frames ms {
+	:calc frames { floor ( ( ( ms / 1000.0 ) / ( FRAME_DELAY / 60 ) ) + 0.5 ) }
+}
+
+##endregion
+
+##region(fold) Key Handling
+# Convert millisecond repeat times to frames
+calc-frames-from-ms ARROW_REPEAT_RATE_FRAMES ARROW_REPEAT_RATE_MS
+
+: key_data
+: key_data_arrow_state	0	# arrow debounce time
+: key_data_updown		0	# 0 = none, 1 = up, 255 = down
+: key_data_leftright	0	# 0 = none, 1 = right, 255 = left
+:monitor key_data 3
 ##endregion
 
 ##region Main
@@ -85,14 +111,61 @@
 	    delay := vf
 		##endregion
 
+		##region(fold) Arrow Key Handler
+		# This stores up/down and left/right data in `key_data`
+		# Keys are debounced and stored as +/- 1, so other code should be able to use
+		# `key_data_updown` and `key_data_leftright` directly
+		i := key_data
+		load v0 - v2
+
+		v3 := 0
+		vF := KEYBIND_DOWN if vF key then v3 += 1
+		vF := KEYBIND_UP if vF key then v3 += -1
+		v4 := 0
+		vF := KEYBIND_RIGHT if vF key then v4 += 1
+		vF := KEYBIND_LEFT if vF key then v4 += -1
+
+		# Check for no input
+		vF := v4
+		vF |= v3
+		if vF == 0 then jump arrow_key_handler_null_input
+
+		# Check if the repeat timer is timed out
+		if v0 == 0 then jump arrow_key_handler_fresh_input
+
+		# decrement timer
+		v0 += -1
+		jump arrow_key_handler_ignore_input
+
+		: arrow_key_handler_fresh_input
+		v0 := ARROW_REPEAT_RATE_FRAMES
+		v1 := v3
+		v2 := v4
+		jump arrow_key_handler_save
+
+
+		: arrow_key_handler_null_input
+		v0 := 0
+		: arrow_key_handler_ignore_input
+		v1 := 0
+		v2 := 0
+		: arrow_key_handler_save
+		save v0 - v2
+		##endregion
+
+
+
+		# Handle the current state
+		# trampoline thingy
+
 		# undraw cursor
 		draw-cursor
 
 		# move cursor
-    	v0 := OCTO_KEY_A if v0 key then cx += -1
-    	v0 := OCTO_KEY_D if v0 key then cx +=  1
-		v0 := OCTO_KEY_W if v0 key then cy += -1
-    	v0 := OCTO_KEY_S if v0 key then cy +=  1
+		i := key_data_updown
+		load v1
+		cy += v0
+		cx += v1
 
 		if cx == 255 then cx := 0
 		if cx > MAP_WIDTH then cx := MAP_WIDTH
