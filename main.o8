@@ -20,273 +20,512 @@
 #
 ##endregion
 
-##region(fold) Constants
-:const FRAME_DELAY 2 # 30 FPS
+##region Macros and Constants ######################################################################
+	##region(fold) Configuration and Constants
 
-:const MAP_WIDTH 15
-:const MAP_HEIGHT 8
-:calc MAP_BYTES { MAP_WIDTH * MAP_HEIGHT }
-:calc MAP_X_LIMIT { 8 + 7 * MAP_WIDTH }
-:calc MAP_Y_LIMIT { 8 + 7 * MAP_HEIGHT }
+	# Keybinds
+	:const KEYBIND_UP OCTO_KEY_W
+	:const KEYBIND_DOWN OCTO_KEY_S
+	:const KEYBIND_LEFT OCTO_KEY_A
+	:const KEYBIND_RIGHT OCTO_KEY_D
+
+	:const ARROW_REPEAT_RATE_MS 100		# Repeat rate for arrow keys in milliseconds
+
+	# Gameloop
+	:const FRAME_DELAY 2 # 30 FPS
+
+	# Level Config
+	:const MAP_WIDTH 15
+	:const MAP_HEIGHT 8
+	:calc MAP_BYTES { MAP_WIDTH * MAP_HEIGHT }
+	:calc MAP_X_LIMIT { 8 + 7 * MAP_WIDTH }
+	:calc MAP_Y_LIMIT { 8 + 7 * MAP_HEIGHT }
 
 
+	# Font Config
+	:const GLYPH_HEIGHT 6
 
-:const KEYBIND_UP OCTO_KEY_W
-:const KEYBIND_DOWN OCTO_KEY_S
-:const KEYBIND_LEFT OCTO_KEY_A
-:const KEYBIND_RIGHT OCTO_KEY_D
-
-
-:const ARROW_REPEAT_RATE_MS 100
-##endregion
-
-##region(fold) Register Aliases
-:alias cx vD
-:alias cy vE
-##endregion
-
-##region(fold) Math Macros
-:macro set-times-6 DEST SRC {
-	# dest/src MUST be distinct!
-	DEST := SRC  # y
-	DEST += DEST # y*2
-	DEST += SRC  # y*3
-	DEST += DEST # y*6
-}
-
-:macro set-times-7 DEST SRC {
-	# dest/src MUST be distinct!
-	DEST := SRC  # y
-	DEST += DEST # y*2
-	DEST += SRC  # y*3
-	DEST += DEST # y*6
-	DEST += SRC  # y*7
-}
-
-:macro set-times-16 DEST SRC {
-	DEST := SRC
-	DEST += DEST
-	DEST += DEST
-	DEST += DEST
-	DEST += DEST
-}
-
-# Convert milliseconds to the nearest number of frames (rounds down below 0.5)
-:macro calc-frames-from-ms frames ms {
-	:calc frames { floor ( ( ( ms / 1000.0 ) / ( FRAME_DELAY / 60 ) ) + 0.5 ) }
-}
-
-##endregion
-
-##region(fold) Key Handling
-# Convert millisecond repeat times to frames
-calc-frames-from-ms ARROW_REPEAT_RATE_FRAMES ARROW_REPEAT_RATE_MS
-
-: key_data
-: key_data_arrow_state	0	# arrow debounce time
-: key_data_updown		0	# 0 = none, 1 = up, 255 = down
-: key_data_leftright	0	# 0 = none, 1 = right, 255 = left
-:monitor key_data 3
-##endregion
-
-##region Main
-: main
-	##region(fold) Initialization
-	hires	
 	##endregion
 
-	##region(fold) Level Setup
-	draw-map
-
-	cx := 1
-	cy := 2
-
-	draw-cursor
+	##region(fold) Global Register Aliases
+	:alias cx vD
+	:alias cy vE
 	##endregion
 
-	##region Game Loop
-	: game-loop
-	    ##region(fold) Framerate Lock Setup
-	    vf := FRAME_DELAY
-	    delay := vf
-		##endregion
+	##region(fold) Math Macros
+	:macro set-times-6 DEST SRC {
+		# dest/src MUST be distinct!
+		DEST := SRC  # y
+		DEST += DEST # y*2
+		DEST += SRC  # y*3
+		DEST += DEST # y*6
+	}
 
-		##region(fold) Arrow Key Handler
-		# This stores up/down and left/right data in `key_data`
-		# Keys are debounced and stored as +/- 1, so other code should be able to use
-		# `key_data_updown` and `key_data_leftright` directly
-		i := key_data
-		load v0 - v2
+	:macro set-times-7 DEST SRC {
+		# dest/src MUST be distinct!
+		DEST := SRC  # y
+		DEST += DEST # y*2
+		DEST += SRC  # y*3
+		DEST += DEST # y*6
+		DEST += SRC  # y*7
+	}
 
-		v3 := 0
-		vF := KEYBIND_DOWN if vF key then v3 += 1
-		vF := KEYBIND_UP if vF key then v3 += -1
-		v4 := 0
-		vF := KEYBIND_RIGHT if vF key then v4 += 1
-		vF := KEYBIND_LEFT if vF key then v4 += -1
-
-		# Check for no input
-		vF := v4
-		vF |= v3
-		if vF == 0 then jump arrow_key_handler_null_input
-
-		# Check if the repeat timer is timed out
-		if v0 == 0 then jump arrow_key_handler_fresh_input
-
-		# decrement timer
-		v0 += -1
-		jump arrow_key_handler_ignore_input
-
-		: arrow_key_handler_fresh_input
-		v0 := ARROW_REPEAT_RATE_FRAMES
-		v1 := v3
-		v2 := v4
-		jump arrow_key_handler_save
+	:macro set-times-16 DEST SRC {
+		DEST := SRC
+		DEST += DEST
+		DEST += DEST
+		DEST += DEST
+		DEST += DEST
+	}
 
 
-		: arrow_key_handler_null_input
-		v0 := 0
-		: arrow_key_handler_ignore_input
-		v1 := 0
-		v2 := 0
-		: arrow_key_handler_save
-		save v0 - v2
+	:macro math_add_u16_u8 outreg_hi outreg_lo inreg_lo {
+		outreg_lo += inreg_lo
+		outreg_hi += vF
+	}
+
+
+	# split 16-bit literal into two 8-bit literals `hi` and `lo`
+	:macro hilo value { :calc hi { value >> 8 } :calc lo { value & 0xFF } }
+
+	# Emit a 16-bit value into code
+	:macro tobytes value { hilo value :byte hi :byte lo }
+
+
+
+	# Convert milliseconds to the nearest number of frames (rounds down below 0.5)
+	:macro calc-frames-from-ms frames ms {
+		:calc frames { floor ( ( ( ms / 1000.0 ) / ( FRAME_DELAY / 60 ) ) + 0.5 ) }
+	}
+
+	##endregion
+
+	
+	##region(fold) Key Handling
+	# Convert millisecond repeat times to frames
+	calc-frames-from-ms ARROW_REPEAT_RATE_FRAMES ARROW_REPEAT_RATE_MS
+
+	: key_data
+	: key_data_arrow_state	0	# arrow debounce time
+	: key_data_updown		0	# 0 = none, 1 = up, 255 = down
+	: key_data_leftright	0	# 0 = none, 1 = right, 255 = left
+	:monitor key_data 3
+	##endregion
+##endregion Macros and Constants
+
+##region Code and Near Data ########################################################################
+	##region Main [Should be the first non-macro thing to save 2 bytes]
+	: main
+		##region One-time Initialization
+		hires
 		##endregion
 
 
+		:breakpoint startit
+		plane 3
+		i := long my_string
+		str-process
+		:breakpoint checkit
+		clear
+		i := long my_string_advanced
+		str-process
+		:breakpoint checkit
+		clear
 
-		# Handle the current state
-		# trampoline thingy
-
-		# undraw cursor
+		##region Level Setup
+		draw-map
+		cx := 1
+		cy := 2
 		draw-cursor
+		##endregion
 
-		# move cursor
-		i := key_data_updown
-		load v1
-		cy += v0
-		cx += v1
+		##region Game Loop
+		: game-loop
+			##region(fold) Framerate Lock Setup
+			vf := FRAME_DELAY
+			delay := vf
+			##endregion
 
-		if cx == 255 then cx := 0
-		if cx > MAP_WIDTH then cx := MAP_WIDTH
-		if cy == 255 then cy := 0
-		if cy > MAP_HEIGHT then cy := MAP_HEIGHT
-		draw-cursor
+			##region(fold) Arrow Key Handler
+			# This stores up/down and left/right data in `key_data`
+			# Keys are debounced and stored as +/- 1, so other code should be able to use
+			# `key_data_updown` and `key_data_leftright` directly
+			i := key_data
+			load v0 - v2
 
-		# check other keys
-		v0 := OCTO_KEY_E
-		if v0 key begin
-			# mess with the map at the cursor position
+			v3 := 0
+			vF := KEYBIND_DOWN if vF key then v3 += 1
+			vF := KEYBIND_UP if vF key then v3 += -1
+			v4 := 0
+			vF := KEYBIND_RIGHT if vF key then v4 += 1
+			vF := KEYBIND_LEFT if vF key then v4 += -1
 
-			# what pixel position?
-			set-times-7 v1 cx
-			v1 += 1
-			set-times-7 v2 cy
-			v2 += 1
+			# Check for no input
+			vF := v4
+			vF |= v3
+			if vF == 0 then jump arrow_key_handler_null_input
 
-			# what buffer index?
-			set-times-16 v3 cy
-			v3 += cx
+			# Check if the repeat timer is timed out
+			if v0 == 0 then jump arrow_key_handler_fresh_input
 
-			# undraw what was there
-			i := buffer-world
-			i += v3
-			load v0
-			draw-sprite
+			# decrement timer
+			v0 += -1
+			jump arrow_key_handler_ignore_input
 
-			# edit the map and draw the new thing
-			i := buffer-world
-			i += v3
-			if v0 == 255 begin
-				v0 := 0
-				save v0
-			else
-				v0 := 255
-				save v0
+			: arrow_key_handler_fresh_input
+			v0 := ARROW_REPEAT_RATE_FRAMES
+			v1 := v3
+			v2 := v4
+			jump arrow_key_handler_save
+
+
+			: arrow_key_handler_null_input
+			v0 := 0
+			: arrow_key_handler_ignore_input
+			v1 := 0
+			v2 := 0
+			: arrow_key_handler_save
+			save v0 - v2
+			##endregion
+
+			# Handle the current state
+			# trampoline thingy
+
+			# undraw cursor
+			draw-cursor
+
+			# move cursor
+			i := key_data_updown
+			load v1
+			cy += v0
+			cx += v1
+
+			if cx == 255 then cx := 0
+			if cx > MAP_WIDTH then cx := MAP_WIDTH
+			if cy == 255 then cy := 0
+			if cy > MAP_HEIGHT then cy := MAP_HEIGHT
+			draw-cursor
+
+			# check other keys
+			v0 := OCTO_KEY_E
+			if v0 key begin
+				# mess with the map at the cursor position
+
+				# what pixel position?
+				set-times-7 v1 cx
+				v1 += 1
+				set-times-7 v2 cy
+				v2 += 1
+
+				# what buffer index?
+				set-times-16 v3 cy
+				v3 += cx
+
+				# undraw what was there
+				i := buffer-world
+				i += v3
+				load v0
+				draw-sprite
+
+				# edit the map and draw the new thing
+				i := buffer-world
+				i += v3
+				if v0 == 255 begin
+					v0 := 0
+					save v0
+				else
+					v0 := 255
+					save v0
+				end
+				draw-sprite
 			end
-			draw-sprite
-		end
 
-    ##region(fold) Framerate Lock Wait
-    loop
-		vf := delay
-		if vf != 0 then
-    again
-	##endregion
-
-	jump game-loop
-	##endregion
-##endregion
-
-
-##region(fold) Drawing
-: draw-sprite # draw the sprite with index v0 at position v1,v2
-	# 0xFF indicates an empty space
-	if v0 == 0xFF then return
-	plane 1
-	if v0 >= 3 then plane 2
-	if v0 >= 4 then plane 3
-	set-times-6 v4 v0
-	i := sprites
-	i += v4
-	sprite v1 v2 6
-	;
-
-: draw-map
-	v3 := 0 # position in buffer
-	v2 := 1 # Y
-	loop
-		v1 := 1 # X
+		##region(fold) Framerate Lock Wait
 		loop
-			i := buffer-world
-			i += v3
-			load v0
-			draw-sprite
-			
-			v1 += 7
-			v3 += 1
-			if v1 != MAP_X_LIMIT then
+			vf := delay
+			if vf != 0 then
 		again
-		
-		v2 += 7
-		if v2 != MAP_Y_LIMIT then
-	again
-	;
+		##endregion
 
-: draw-cursor
-	i := cursor
-	set-times-7 v1 cx
-	set-times-7 v2 cy
-	sprite v1 v2 8
-	;
+		jump game-loop
+		##endregion
+	##endregion
+
+##region(fold) Utility Functions
+	##region(fold) Set I = address in registers
+		# `reg-set-i-macro` creates a self modifying function that builds an `I = long v0 v1` instruction
+		:macro _reg-set-i-macro reg-hi reg-lo target { i := target save reg-hi - reg-lo 0xF0 0x00 : target 0x00 0x00 ; }
+
+		: reg-set-i-v01 _reg-set-i-macro v0 v1 reg_set_i_v01_target		# This is the instantiated function `reg_set_i_v01`
+		: reg-set-i-v23 _reg-set-i-macro v2 v3 reg_set_i_v23_target		# Uncomment for a version that operates on v23
+	##endregion
 ##endregion
 
-##region(fold) Game State Data
-: buffer-world
-	0x02 0x00 0x00 0x00 0x00 0x00 0x02 0x00 0x01 0x00 0x01 0xFF 0xFF 0x00 0x00 0x00
-	0x01 0xFF 0x00 0x01 0xFF 0xFF 0xFF 0xFF 0x02 0x00 0x02 0xFF 0x04 0x01 0xFF 0xFF
-	0x01 0xFF 0x00 0x01 0xFF 0x03 0xFF 0xFF 0x02 0x00 0x02 0xFF 0x01 0x01 0xFF 0xFF
-	0xFF 0xFF 0xFF 0x00 0xFF 0xFF 0xFF 0x01 0x06 0xFF 0xFF 0xFF 0xFF 0xFF 0xFF 0xFF
-	0x01 0xFF 0x00 0x01 0xFF 0xFF 0xFF 0xFF 0x02 0x00 0x02 0x01 0x01 0x01 0xFF 0xFF
-	0x01 0xFF 0x00 0x01 0xFF 0xFF 0xFF 0xFF 0xFF 0x00 0x02 0x03 0x01 0x01 0xFF 0xFF
-	0x02 0x00 0x02 0x00 0x00 0x00 0x02 0x00 0x01 0x00 0x01 0x03 0xFF 0x00 0x00 0x00
-	0x01 0xFF 0x04 0x01 0xFF 0xFF 0xFF 0xFF 0x02 0x00 0x02 0xFF 0x01 0x01 0xFF 0xFF
-	0x01 0xFF 0x00 0x01 0xFF 0xFF 0xFF 0xFF 0x02 0x00 0x02 0xFF 0x01 0x01 0xFF 0xFF
+	##region(fold) Drawing
+	: draw-sprite # draw the sprite with index v0 at position v1,v2
+		# 0xFF indicates an empty space
+		if v0 == 0xFF then return
+		plane 1
+		if v0 >= 3 then plane 2
+		if v0 >= 4 then plane 3
+		set-times-6 v4 v0
+		i := tiles
+		i += v4
+		sprite v1 v2 6
+		;
 
-:monitor buffer-world MAP_BYTES
-##endregion
+	: draw-map
+		v3 := 0 # position in buffer
+		v2 := 1 # Y
+		loop
+			v1 := 1 # X
+			loop
+				i := buffer-world
+				i += v3
+				load v0
+				draw-sprite
+				
+				v1 += 7
+				v3 += 1
+				if v1 != MAP_X_LIMIT then
+			again
+			
+			v2 += 7
+			if v2 != MAP_Y_LIMIT then
+		again
+		;
 
-##region(fold) Sprite Data
-: cursor
-	0xFF 0x81 0x81 0x81 0x81 0x81 0x81 0xFF
+	: draw-cursor
+		i := cursor
+		set-times-7 v1 cx
+		set-times-7 v2 cy
+		sprite v1 v2 8
+		;
+	##endregion
 
-: sprites
-	0x7C 0xF8 0xFC 0xF8 0xF4 0xA8 # 00 stone
-	0x40 0xE8 0x40 0x08 0x5C 0x08 # 01 sparkle
-	0x30 0x30 0xFC 0xFC 0x30 0x30 # 02 plus
-	0x78 0xB4 0xFC 0x00 0x30 0x48 # 03 mr. mushroom
-	0xE0 0xA8 0xE0 0x1C 0x54 0x1C # 04 miner
-	0xE0 0xE0 0xE0 0x1C 0x1C 0x1C
-	0xFC 0x48 0x78 0x48 0x78 0x48 # 06 tower
-	0xFC 0x78 0x78 0x78 0x78 0x48
-##endregion
+	##region(fold) Game State Data
+	: buffer-world
+		0x02 0x00 0x00 0x00 0x00 0x00 0x02 0x00 0x01 0x00 0x01 0xFF 0xFF 0x00 0x00 0x00
+		0x01 0xFF 0x00 0x01 0xFF 0xFF 0xFF 0xFF 0x02 0x00 0x02 0xFF 0x04 0x01 0xFF 0xFF
+		0x01 0xFF 0x00 0x01 0xFF 0x03 0xFF 0xFF 0x02 0x00 0x02 0xFF 0x01 0x01 0xFF 0xFF
+		0xFF 0xFF 0xFF 0x00 0xFF 0xFF 0xFF 0x01 0x06 0xFF 0xFF 0xFF 0xFF 0xFF 0xFF 0xFF
+		0x01 0xFF 0x00 0x01 0xFF 0xFF 0xFF 0xFF 0x02 0x00 0x02 0x01 0x01 0x01 0xFF 0xFF
+		0x01 0xFF 0x00 0x01 0xFF 0xFF 0xFF 0xFF 0xFF 0x00 0x02 0x03 0x01 0x01 0xFF 0xFF
+		0x02 0x00 0x02 0x00 0x00 0x00 0x02 0x00 0x01 0x00 0x01 0x03 0xFF 0x00 0x00 0x00
+		0x01 0xFF 0x04 0x01 0xFF 0xFF 0xFF 0xFF 0x02 0x00 0x02 0xFF 0x01 0x01 0xFF 0xFF
+		0x01 0xFF 0x00 0x01 0xFF 0xFF 0xFF 0xFF 0x02 0x00 0x02 0xFF 0x01 0x01 0xFF 0xFF
+
+	:monitor buffer-world MAP_BYTES
+	##endregion
+
+	##region(fold) Screens and Strings
+
+	# Sigil value used to indicate the following byte(s) are interpreted as a command
+	:const STR_ESC 0xFF
+
+	:alias str_x v4
+	:alias str_y v5
+
+	:macro str-display name {
+		:calc _str_address
+	}
+
+	# Process a string
+	# call with I = string name
+	: str-process
+		# Each string has the address of it's data as the first two bytes of the string
+		load v2 - v3
+
+	: str-process-continue
+		# Load the next byte in the string from v2v3
+		reg-set-i-v23
+		load v0
+
+		# If this is not an escape then jump to the processing kernel
+		# This is changed on the fly by the strings
+		if v0 != STR_ESC then : str_process_kernel_jump_target jump str_process_kernel_sprite8
+
+		# Otherwise this is an escape, load the next byte and jump into the table
+		: str-process-is-escape
+		load v0
+		jump0 str_escape_table
+
+		: str-process-next
+
+		# Advance to the next byte
+		# expect v0 to be set the the number of bytes to skip
+		math_add_u16_u8 v2 v3 v0	# v23 += v0
+
+		jump str-process-continue
+
+
+
+	# String processing kernels
+	# When executed, v0 = byte to process
+	# Returns to `str-process-next` with v0 = number of bytes to advance
+
+	: str_process_kernel_sprite8
+		i := long sprite8_data
+		# max 64 sprite8s because we multiply v0 * 4
+		v0 <<= v0
+		v0 <<= v0
+		i += v0	# +4
+		i += v0 # +8
+		i += v0	# +12
+		i += v0 # +16
+		sprite str_x str_y 8
+		str_x += 8
+		v0 := 1	# advance 1 byte
+		jump str-process-next
+
+	: str_process_kernel_sprite16
+		# max 32 sprite16s because we multiple v0 * 8
+		i := long sprite16_data
+		v0 <<= v0
+		v0 <<= v0
+		v0 <<= v0
+		i += v0	# +8
+		i += v0 # +16
+		i += v0	# +24
+		i += v0 # +32
+		i += v0	# +40
+		i += v0 # +48
+		i += v0	# +56
+		i += v0 # +64
+		sprite str_x str_y 0
+		str_x += 16
+		v0 := 1	# advance 1 byte
+		jump str-process-next
+
+	: str_process_kernel_text
+		i := long font_data
+		:assert "This expects the glyph height to be 6" { GLYPH_HEIGHT == 6 }
+		i += v0			# +1
+		v0 <<= v0
+		i += v0			# +2
+		v0 <<= v0
+		load v0 - v1 	# +7
+
+		# Load width
+		load v0
+		str_x += v0
+		sprite str_x str_y GLYPH_HEIGHT
+		v0 := 1	# advance 1 byte
+		jump str-process-next
+
+
+	# Process an escape
+	# Expects I = byte immediately after escape byte
+	# Returns to `str-process-next` with v0 = number of bytes to advance
+	: str-process-escape
+		load v0
+		jump0 str_escape_table
+
+	# String escape jump table
+	: str_escape_table
+	:calc STR_ESC_TABLE { HERE }
+		# STR_END: Marks the end of the string
+			: str_esc_end :calc STR_END { HERE - STR_ESC_TABLE } :assert "Table too large" { HERE - STR_ESC_TABLE <= 255 }
+				return	# This returns to the function that called str-process
+		# STR_LOC: Sets the location to next two bytes in the string
+			: str_esc_loc :calc STR_LOC { HERE - STR_ESC_TABLE } :assert "Table too large" { HERE - STR_ESC_TABLE <= 255 }
+				# Load the bytes directly into the x/y coords
+				load str_x - str_y
+				v0 := 3		# Advance 3 bytes
+				jump str-process-next
+		# STR_MODE: Sets the mode to the address in the next two bytes
+			: str_mode :calc STR_MODE { HERE - STR_ESC_TABLE } :assert "Table too large" { HERE - STR_ESC_TABLE <= 255 }
+				# An instruction that jumps to the correct kernel is stored directly in the string so it can just be copied
+				load v0 - v1
+				i := str_process_kernel_jump_target
+				save v0 - v1
+				v0 := 3		# Advance 3 bytes
+				jump str-process-next
+
+	##endregion
+
+##endregion Code and Near Data
+
+##region Far Data [Expected to require `long` access] ##############################################
+	##region(fold) Tile Data
+	: cursor
+		0xFF 0x81 0x81 0x81 0x81 0x81 0x81 0xFF
+
+	: tiles
+		0x7C 0xF8 0xFC 0xF8 0xF4 0xA8 # 00 stone
+		0x40 0xE8 0x40 0x08 0x5C 0x08 # 01 sparkle
+		0x30 0x30 0xFC 0xFC 0x30 0x30 # 02 plus
+		0x78 0xB4 0xFC 0x00 0x30 0x48 # 03 mr. mushroom
+		0xE0 0xA8 0xE0 0x1C 0x54 0x1C # 04 miner
+		0xE0 0xE0 0xE0 0x1C 0x1C 0x1C
+		0xFC 0x48 0x78 0x48 0x78 0x48 # 06 tower
+		0xFC 0x78 0x78 0x78 0x78 0x48
+	##endregion
+
+	##region(fold) Sprite8 Data
+	: sprite8_data
+		:calc sprite8_count { 0 }
+		:macro def-sprite8 name { :assert "SPRITE8: Size / Data Mismatch" { ( sprite8_count * 16 ) == HERE - sprite8_data } :calc name { sprite8_count } :calc sprite8_count { sprite8_count + 1 } }
+		def-sprite8 spr8_test1
+			0xCC 0xCC 0x00 0x00 0xC0 0xC0 0x03 0x03
+			0x3C 0x3C 0xC0 0xC0 0xC0 0xC0 0x03 0x03
+
+		def-sprite8 spr8_test2
+			0x55 0xAA 0x00 0x00 0x55 0xAA 0x00 0x00
+			0x00 0x00 0x55 0xAA 0x55 0xAA 0x00 0x00
+	##endregion
+
+	##region(fold) Sprite8 Data
+	: sprite16_data
+		:calc sprite16_count { 0 }
+		:macro def-sprite16 name { :assert "SPRITE16: Size / Data Mismatch" { ( sprite16_count * 64 ) == HERE - sprite16_data } :calc name { sprite16_count } :calc sprite16_count { sprite16_count + 1 } }
+		def-sprite16 spr16_test1 0x80 0x01 0xC0 0xE1 0x61 0xF3 0x31 0xF2 0x08 0x06 0x04 0x0C 0x02 0x18 0x03 0x30 0x01 0xE0 0x01 0xC0 0x03 0x60 0x02 0x30 0x04 0x1C 0x39 0xC4 0x61 0xC2 0xC0 0x03 0x00 0x00 0x00 0xE0 0x01 0xF0 0x01 0xF0 0x00 0x00 0x00 0x00 0x00 0x00 0x70 0x00 0x70 0x07 0x70 0x07 0x00 0x00 0x00 0x00 0x00 0x00 0x01 0xC0 0x01 0xC0 0x00 0x00
+		def-sprite16 spr16_test2 0xF0 0x00 0xF7 0xF8 0xF7 0xA8 0x00 0xA8 0x00 0xA8 0x00 0xA8 0x07 0xA8 0x07 0xF8 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0xFF 0xFF 0xFF 0xFF 0x00 0x00 0x07 0xF8 0x07 0xA8 0x0F 0xA8 0x0F 0xA8 0x0F 0xA8 0x07 0xA8 0x07 0xF8 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0xFF 0xFF
+	##endregion
+
+	##region(fold) Font Data
+	: font_data
+	##endregion
+
+
+	##region(fold) String Data
+
+	# Macros for creating strings
+		# Emit the address of the following data
+		:macro S_BEGIN { :calc _after_this { HERE + 2 } tobytes _after_this }
+		# Emits an escape and the END offset
+		:macro S_END { :byte STR_ESC :byte STR_END }
+		# Emits an escape, the LOC offset, and the x/y data
+		:macro S_LOC x y { :byte STR_ESC :byte STR_LOC :byte x :byte y }
+		# Emites an escape, the MODE offset, and an jump instruction to the appropriate kernel
+		:macro S_MODE_SPR8 { :byte STR_ESC :byte STR_MODE :calc _jump_inst { str_process_kernel_sprite8 | 0x1000 } tobytes _jump_inst }
+		:macro S_MODE_SPR16 { :byte STR_ESC :byte STR_MODE :calc _jump_inst { str_process_kernel_sprite16 | 0x1000 } tobytes _jump_inst }
+		:macro S_MODE_TEXT { :byte STR_ESC :byte STR_MODE :calc _jump_inst { str_process_kernel_text | 0x1000 } tobytes _jump_inst }
+
+	: string_data
+
+	: my_string
+		S_BEGIN
+		S_LOC 0 0
+		S_MODE_SPR8
+		:byte spr8_test1
+		S_END
+	: my_string_advanced
+		S_BEGIN
+		S_LOC 0 0
+		S_MODE_SPR8
+		:byte spr8_test1
+		:byte spr8_test1
+		:byte spr8_test2
+		:byte spr8_test2
+		S_LOC 10 20
+		:byte spr8_test2
+		S_MODE_SPR16
+		:byte spr16_test1
+		S_LOC 10 40
+		:byte spr16_test2
+		S_END
+	##endregion
+
+
+##endregion Far Data
