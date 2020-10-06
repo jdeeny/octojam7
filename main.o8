@@ -116,28 +116,10 @@
 ##region Code and Near Data ########################################################################
 	##region Main [Should be the first non-macro thing to save 2 bytes]
 	: main
-		##region One-time Initialization
+		# One-time Initialization
 		hires
-		##endregion
-
-
-		:breakpoint startit
 		plane 3
-		i := long str_screenborder
-		str-process
-		:breakpoint checkit
-		clear
-		i := long my_string_advanced
-		str-process
-		:breakpoint checkit
-		clear
-
-		##region Level Setup
-		draw-map
-		cx := 1
-		cy := 2
-		draw-cursor
-		##endregion
+		state-set-splash
 
 		##region Game Loop
 		: game-loop
@@ -188,57 +170,10 @@
 			save v0 - v2
 			##endregion
 
-			# Handle the current state
-			# trampoline thingy
-
-			# undraw cursor
-			draw-cursor
-
-			# move cursor
-			i := key_data_updown
-			load v1
-			cy += v0
-			cx += v1
-
-			if cx == 255 then cx := 0
-			if cx > MAP_WIDTH then cx := MAP_WIDTH
-			if cy == 255 then cy := 0
-			if cy > MAP_HEIGHT then cy := MAP_HEIGHT
-			draw-cursor
-
-			# check other keys
-			v0 := OCTO_KEY_E
-			if v0 key begin
-				# mess with the map at the cursor position
-
-				# what pixel position?
-				set-times-7 v1 cx
-				v1 += 1
-				set-times-7 v2 cy
-				v2 += 1
-
-				# what buffer index?
-				set-times-16 v3 cy
-				v3 += cx
-
-				# undraw what was there
-				i := buffer-world
-				i += v3
-				load v0
-				draw-sprite
-
-				# edit the map and draw the new thing
-				i := buffer-world
-				i += v3
-				if v0 == 255 begin
-					v0 := 0
-					save v0
-				else
-					v0 := 255
-					save v0
-				end
-				draw-sprite
-			end
+			# Gamestate Handler
+			# The following jump is overwritten with a jump to the current state
+			: state-handler-target jump state-handler-splash
+			: state-handler-return
 
 		##region(fold) Framerate Lock Wait
 		loop
@@ -443,6 +378,89 @@
 				jump str-process-next
 
 	##endregion
+
+:macro set-state-handler handler { :calc _jump_inst { handler | 0x1000 } hilo _jump_inst v0 := hi v1 := lo i := state-handler-target save v0 - v1 }
+
+: state-handler-splash
+	v0 := 0 if v0 key then state-set-gameplay
+	jump state-handler-return
+
+: state-set-splash
+	# Set the handler
+	set-state-handler state-handler-splash
+
+	# Do things that happen once when switching
+	clear
+	i := long str_screenborder
+	str-process
+	;
+
+
+
+: state-handler-gameplay
+	# undraw cursor
+	draw-cursor
+
+	# move cursor
+	i := key_data_updown
+	load v1
+	cy += v0
+	cx += v1
+
+	if cx == 255 then cx := 0
+	if cx > MAP_WIDTH then cx := MAP_WIDTH
+	if cy == 255 then cy := 0
+	if cy > MAP_HEIGHT then cy := MAP_HEIGHT
+	draw-cursor
+
+	# check other keys
+	v0 := OCTO_KEY_E
+	if v0 key begin
+		# mess with the map at the cursor position
+
+		# what pixel position?
+		set-times-7 v1 cx
+		v1 += 1
+		set-times-7 v2 cy
+		v2 += 1
+
+		# what buffer index?
+		set-times-16 v3 cy
+		v3 += cx
+
+		# undraw what was there
+		i := buffer-world
+		i += v3
+		load v0
+		draw-sprite
+
+		# edit the map and draw the new thing
+		i := buffer-world
+		i += v3
+		if v0 == 255 begin
+			v0 := 0
+			save v0
+		else
+			v0 := 255
+			save v0
+		end
+		draw-sprite
+	end
+	jump state-handler-return
+
+
+: state-set-gameplay
+	# Set the handler
+	set-state-handler state-handler-gameplay
+
+	# Do things that happen once when switching
+	clear
+	draw-map
+	cx := 1
+	cy := 2
+	draw-cursor
+	;
+
 
 ##endregion Code and Near Data
 
