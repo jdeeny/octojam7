@@ -43,7 +43,7 @@
 
 
 	# Font Config
-	:const GLYPH_HEIGHT 6
+	:const GLYPH_HEIGHT 8
 
 	##endregion
 
@@ -333,12 +333,12 @@
 		jump str-process-next
 
 	: str_process_kernel_text
-		i := long font_data
-		:assert "This expects the glyph height to be 6" { GLYPH_HEIGHT == 6 }
+		i := long glyph_data
 		i += v0			# +1
 		v0 <<= v0
 		i += v0			# +2
 		v0 <<= v0
+		i += v0
 		load v0 - v1 	# +7
 
 		# Load width
@@ -392,6 +392,9 @@
 	# Do things that happen once when switching
 	clear
 	i := long str_screenborder
+	str-process
+
+	i := long str_test_text
 	str-process
 	;
 
@@ -505,7 +508,30 @@
 	##endregion
 
 	##region(fold) Font Data
-	: font_data
+
+
+    :calc GLYPH_MAX_WIDTH { 8 }         # Require that glyphs be this width or less
+
+	:calc glyph_count { 0 }
+
+	:macro def-glyph name letter r1 r2 r3 r4 r5 r6 r7 r8 {
+		:assert "Glyph: Size / Data Mismatch" { ( glyph_count * ( ( GLYPH_HEIGHT * 2 ) + 1 ) ) == ( HERE - glyph_data ) }
+		:calc name { glyph_count }
+		:stringmode Text letter {
+			:byte INDEX
+		}
+		:calc glyph_count { glyph_count + 1 }
+		:calc _glyph_composite { r1 | r2 | r3 | r4 | r5 | r6 | r7 | r8 }
+        :calc _glyph_width { 9 - ( log _glyph_composite & - _glyph_composite ) / log 2 }    # Magic formula from IJ
+        :assert "Glyph too wide" { _glyph_width <= GLYPH_MAX_WIDTH }
+		:byte _glyph_width :byte r1 :byte r2 :byte r3 :byte r4 :byte r5 :byte r6 :byte r7 :byte r8 :byte r1 :byte r2 :byte r3 :byte r4 :byte r5 :byte r6 :byte r7 :byte r8
+	}
+
+	: glyph_data
+	def-glyph glyph_a "a" 0x00 0x00 0x00 0xC0 0xC0 0x80 0xC0 0x00
+	def-glyph glyph_b "b" 0x00 0x00 0x00 0xC0 0xC0 0x80 0xC0 0x00
+	def-glyph glyph_e "e" 0x00 0x00 0x00 0xC0 0xC0 0x80 0xC0 0x00
+
 	##endregion
 
 
@@ -543,6 +569,13 @@
 		:byte spr16_border_v
 		S_LOC 248 40
 		:byte spr16_border_v
+		S_END
+
+	: str_test_text
+		S_BEGIN
+		S_LOC 10 10
+		S_MODE_TEXT
+		Text "abe"
 		S_END
 
 	: my_string
