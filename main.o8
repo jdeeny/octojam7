@@ -255,8 +255,50 @@
 
 	##region(fold) Screens and Strings
 
+	# A `String` represents a sequence of commands to process. A selectable processing kernel
+	# is used to consume bytes from the string. A special sigil value (0x00) indicates an escaped
+	# meta-command that can change kernels, output location, etc.
+	#
+	# Each string consists of a preamble, body, and end.
+	#
+	# [ Preamble (4B) | Body (nB) | End (2B) ]
+	#
+	# The `preamble` contains a jump instruction to the kernel to use and the address of the string
+	# data. This is loaded at the start of string processing.
+	#
+	# The `body` contains a sequence of 2-byte addresses to be consumed by the kernel. The escape
+	# sigil value of 0 was chosen because it should not conflict with any address in far data.
+	#
+	# The required `end` portion of the string is the 2-byte END escape sequence, which halts string processing.
+	#
+	# There are three processing kernels:
+	#	sprite8		Display 8x8 sprites, advances `x` 8px
+	#	sprite16	Display 16x16 sprites, advances `x` 16px
+	#	text		Display text glyphs, advances `x` proportionally (amount is stored before the sprite)
+	#
+	# Escapes:
+	#	END			Stop string processing (2 bytes)
+	#	LOC			Locate to the a given x, y position (4 bytes)
+	#	MODE		Set the processing kernel (4 bytes)
+	#
+	#
+	# Possible changes / improvements:
+	# 	- Add a way to do line wrapping
+	#	- Add a way to do substrings, possibly as another mode. If we restrict to one level it shouldn't
+	#		take too much
+
 	# Sigil value used to indicate the following byte(s) are interpreted as a command
-	:const STR_ESC 0xFF
+	:const STR_ESC 0
+
+
+	# Register setup
+	# 	v2v3	address of string data
+	# 	v4		screen x coord
+	# 	v5	 	screen y coord
+	#
+	# When loading string initially
+	# 	v0v1	address of kernel
+	#
 
 	:alias str_x v4
 	:alias str_y v5
@@ -265,30 +307,59 @@
 		:calc _str_address
 	}
 
-	# Process a string
-	# call with I = string name
-	: str-process
-		# Each string has the address of it's data as the first two bytes of the string
-		load v2 - v3
+	: str-process		# Process (display) a string at I
+	# Parameters:
+	#	I		address of the string
+	#	v4		screen x coord (optional if location set in the string)
+	#	v5		screen y coord (optional if location set in string)
+	###
 
-	: str-process-continue
-		# Load the next byte in the string from v2v3
+	# Load the preamble (v0v1 = kernel, v2v3 = string data)
+	load v0 - v3
+
+	# Set the processing kernel
+	i := str_process_kernel_jump_target
+	save v0 - v1
+
+	: str-process-continue		# Continue processing an in-progress string
+		# Load the next 2 bytes of the string, advancing I by 2
 		reg-set-i-v23
-		load v0
+		load v1
 
 		# If this is not an escape then jump to the processing kernel
-		# This is changed on the fly by the strings
-		if v0 != STR_ESC then : str_process_kernel_jump_target jump str_process_kernel_sprite8
+		# The target is is changed on the fly by the strings
+		if v0 != STR_ESC then : str_process_kernel_jump_target jump str-kernel-sprite8
 
-		# Otherwise this is an escape, load the next byte and jump into the table
+		# This is an escape, use the 2nd byte to jump into the table
 		: str-process-is-escape
-		load v0
+		v0 := v1
 		jump0 str_escape_table
 
-		: str-process-next
+		# String escape jump table
+		: str_escape_table
+		:calc STR_ESC_TABLE { HERE }
+			# STR_END: Marks the end of the string
+				: str_esc_end :calc STR_END { HERE - STR_ESC_TABLE } :assert "Table too large" { HERE - STR_ESC_TABLE <= 255 }
+					return	# This returns to the function that called str-process
+			# STR_LOC: Sets the location to next two bytes in the string
+				: str_esc_loc :calc STR_LOC { HERE - STR_ESC_TABLE } :assert "Table too large" { HERE - STR_ESC_TABLE <= 255 }
+					# Load the bytes directly into the x/y coords
+					load str_x - str_y
+					v0 := 4		# Advance 4 bytes
+					jump str-process-escape-next
+			# STR_MODE: Sets the mode to the address in the next two bytes
+				: str_mode :calc STR_MODE { HERE - STR_ESC_TABLE } :assert "Table too large" { HERE - STR_ESC_TABLE <= 255 }
+					# An instruction that jumps to the correct kernel is stored directly in the string so it can just be copied
+					load v0 - v1
+					i := str_process_kernel_jump_target
+					save v0 - v1
+					v0 := 4		# Advance 4 bytes
+					jump str-process-escape-next
 
-		# Advance to the next byte
-		# expect v0 to be set the the number of bytes to skip
+		# processing kernels return here
+		: str-process-next			# Kernels return here and 2 bytes are always consumed
+			v0 := 2
+		: str-process-escape-next	# Escapes return here with a variable number of bytes consumed
 		math_add_u16_u8 v2 v3 v0	# v23 += v0
 
 		jump str-process-continue
@@ -296,86 +367,52 @@
 
 
 	# String processing kernels
-	# When executed, v0 = byte to process
-	# Returns to `str-process-next` with v0 = number of bytes to advance
+	#
+	# These process non-escaped parts of strings 2 bytes at a time
+	#		- When the kernel is jumped into:
+	#			- v0-v1 contain 2 bytes from the string and I = next string data
+	#			- v2v3 still points to the location the current bytes came from
+	# 		- Return to `str-process-next` when done if consuming 2 bytes. If some other number is
+	#			consumed, you can set v0 and jump to str-process-escape-next
 
-	: str_process_kernel_sprite8
-		i := long sprite8_data
-		# max 64 sprite8s because we multiply v0 * 4
-		v0 <<= v0
-		v0 <<= v0
-		i += v0	# +4
-		i += v0 # +8
-		i += v0	# +12
-		i += v0 # +16
+	# Display an 8x8 sprite at str_x, str_y. Advance str_x by 8 pixels.
+	: str-kernel-sprite8
+		reg-set-i-v01						# Set I to the location of the sprite
 		sprite str_x str_y 8
 		str_x += 8
-		v0 := 1	# advance 1 byte
 		jump str-process-next
 
-	: str_process_kernel_sprite16
-		# max 32 sprite16s because we multiple v0 * 8
-		i := long sprite16_data
-		v0 <<= v0
-		v0 <<= v0
-		v0 <<= v0
-		i += v0	# +8
-		i += v0 # +16
-		i += v0	# +24
-		i += v0 # +32
-		i += v0	# +40
-		i += v0 # +48
-		i += v0	# +56
-		i += v0 # +64
+	# Display a 16x16 sprite at str_x, str_y. Advance str_x by 16 pixels.
+	: str-kernel-sprite16
+		reg-set-i-v01						# Set I to the location of the sprite
 		sprite str_x str_y 0
 		str_x += 16
-		v0 := 1	# advance 1 byte
 		jump str-process-next
 
-	: str_process_kernel_text
-		i := long glyph_data
-		i += v0			# +1
-		v0 <<= v0
-		i += v0			# +2
-		v0 <<= v0
-		i += v0
-		load v0 - v1 	# +7
-
-		# Load width
-		load v0
-		str_x += v0
+	# Display a variable width 8px tall glyph sprite at str_x, str_y.
+	# A byte stored immediately before the sprite data is used to advance str_x.
+	: str-kernel-text
+		reg-set-i-v01						# Set I to the location of the width and sprite data
+		load v0								# v0 := width, I := sprite data
 		sprite str_x str_y GLYPH_HEIGHT
-		v0 := 1	# advance 1 byte
+		str_x += v0
 		jump str-process-next
 
+	# Macros for creating strings
+		:macro def-string name mode {
+		}
+		# Emit the address of the following data
+		:macro S_BEGIN { :calc _after_this { HERE + 2 } tobytes _after_this }
+		# Emits an escape and the END offset
+		:macro S_END { :byte STR_ESC :byte STR_END }
+		# Emits an escape, the LOC offset, and the x/y data
+		:macro S_LOC x y { :byte STR_ESC :byte STR_LOC :byte x :byte y }
+		# Emites an escape, the MODE offset, and an jump instruction to the appropriate kernel
+		:macro S_MODE_SPR8 { :byte STR_ESC :byte STR_MODE :calc _jump_inst { str-kernel-sprite8 | 0x1000 } tobytes _jump_inst }
+		:macro S_MODE_SPR16 { :byte STR_ESC :byte STR_MODE :calc _jump_inst { str-kernel-sprite16 | 0x1000 } tobytes _jump_inst }
+		:macro S_MODE_TEXT { :byte STR_ESC :byte STR_MODE :calc _jump_inst { str-kernel-text | 0x1000 } tobytes _jump_inst }
 
-	# Process an escape
-	# Expects I = byte immediately after escape byte
-	# Returns to `str-process-next` with v0 = number of bytes to advance
-	: str-process-escape
-		load v0
-		jump0 str_escape_table
 
-	# String escape jump table
-	: str_escape_table
-	:calc STR_ESC_TABLE { HERE }
-		# STR_END: Marks the end of the string
-			: str_esc_end :calc STR_END { HERE - STR_ESC_TABLE } :assert "Table too large" { HERE - STR_ESC_TABLE <= 255 }
-				return	# This returns to the function that called str-process
-		# STR_LOC: Sets the location to next two bytes in the string
-			: str_esc_loc :calc STR_LOC { HERE - STR_ESC_TABLE } :assert "Table too large" { HERE - STR_ESC_TABLE <= 255 }
-				# Load the bytes directly into the x/y coords
-				load str_x - str_y
-				v0 := 4		# Advance 3 bytes
-				jump str-process-next
-		# STR_MODE: Sets the mode to the address in the next two bytes
-			: str_mode :calc STR_MODE { HERE - STR_ESC_TABLE } :assert "Table too large" { HERE - STR_ESC_TABLE <= 255 }
-				# An instruction that jumps to the correct kernel is stored directly in the string so it can just be copied
-				load v0 - v1
-				i := str_process_kernel_jump_target
-				save v0 - v1
-				v0 := 4		# Advance 3 bytes
-				jump str-process-next
 
 	##endregion
 
@@ -528,6 +565,32 @@
 	}
 
 	: glyph_data
+	def-glyph glyph_A "A" 0x40 0xA0 0xA0 0xE0 0xA0 0xA0 0xA0 0x00
+	def-glyph glyph_B "B" 0xC0 0xA0 0xA0 0xC0 0xA0 0xA0 0xC0 0x00
+	def-glyph glyph_C "C" 0xE0 0x80 0x80 0x80 0x80 0x80 0xE0 0x00
+	def-glyph glyph_D "D" 0xC0 0xA0 0xA0 0xA0 0xA0 0xA0 0xC0 0x00
+	def-glyph glyph_E "E" 0xE0 0x80 0x80 0xC0 0x80 0x80 0xE0 0x00
+	def-glyph glyph_F "F" 0xE0 0x80 0x80 0xC0 0x80 0x80 0x80 0x00
+	def-glyph glyph_G "G" 0xE0 0x80 0x80 0x80 0xA0 0xA0 0xE0 0x00
+	def-glyph glyph_H "H" 0xA0 0xA0 0xA0 0xE0 0xA0 0xA0 0xA0 0x00
+	def-glyph glyph_I "I" 0xE0 0x40 0x40 0x40 0x40 0x40 0xE0 0x00
+	def-glyph glyph_J "J" 0xE0 0x20 0x20 0x20 0x20 0xA0 0xE0 0x00
+	def-glyph glyph_K "K" 0xA0 0xA0 0xA0 0xC0 0xA0 0xA0 0xA0 0x00
+	def-glyph glyph_L "L" 0x80 0x80 0x80 0x80 0x80 0x80 0xE0 0x00
+	def-glyph glyph_M "M" 0xF8 0xA8 0xA8 0xA8 0xA8 0xA8 0xA8 0x00
+	def-glyph glyph_N "N" 0x90 0x90 0xD0 0xF0 0xB0 0x90 0x90 0x00
+	def-glyph glyph_O "O" 0x60 0x90 0x90 0x90 0x90 0x90 0x60 0x00
+	def-glyph glyph_P "P" 0xE0 0x90 0x90 0xE0 0x80 0x80 0x80 0x00
+	def-glyph glyph_Q "Q" 0x60 0x90 0x90 0x90 0x90 0xA0 0x50 0x00
+	def-glyph glyph_R "R" 0xE0 0x90 0x90 0xE0 0x90 0x90 0x90 0x00
+	def-glyph glyph_S "S" 0xF0 0x90 0x80 0xF0 0x10 0x90 0xF0 0x00
+	def-glyph glyph_T "T" 0xE0 0x40 0x40 0x40 0x40 0x40 0x40 0x00
+	def-glyph glyph_U "U" 0xA0 0xA0 0xA0 0xA0 0xA0 0xA0 0xE0 0x00
+	def-glyph glyph_V "V" 0xA0 0xA0 0xA0 0xA0 0xA0 0xA0 0x40 0x00
+	def-glyph glyph_W "W" 0xA8 0xA8 0xA8 0xA8 0xA8 0xA8 0xF8 0x00
+	def-glyph glyph_X "X" 0xA0 0xA0 0xA0 0x40 0x40 0xA0 0xA0 0x00
+	def-glyph glyph_Y "Y" 0xA0 0xA0 0xA0 0x40 0x40 0x40 0x40 0x00
+	def-glyph glyph_Z "Z" 0xE0 0x20 0x40 0x40 0x40 0x80 0xE0 0x00
 	def-glyph glyph_a "a" 0x00 0x00 0x00 0xC0 0xC0 0x80 0xC0 0x00
 	def-glyph glyph_b "b" 0x00 0x00 0x00 0xC0 0xC0 0x80 0xC0 0x00
 	def-glyph glyph_e "e" 0x00 0x00 0x00 0xC0 0xC0 0x80 0xC0 0x00
@@ -536,18 +599,6 @@
 
 
 	##region(fold) String Data
-
-	# Macros for creating strings
-		# Emit the address of the following data
-		:macro S_BEGIN { :calc _after_this { HERE + 2 } tobytes _after_this }
-		# Emits an escape and the END offset
-		:macro S_END { :byte STR_ESC :byte STR_END }
-		# Emits an escape, the LOC offset, and the x/y data
-		:macro S_LOC x y { :byte STR_ESC :byte STR_LOC :byte x :byte y }
-		# Emites an escape, the MODE offset, and an jump instruction to the appropriate kernel
-		:macro S_MODE_SPR8 { :byte STR_ESC :byte STR_MODE :calc _jump_inst { str_process_kernel_sprite8 | 0x1000 } tobytes _jump_inst }
-		:macro S_MODE_SPR16 { :byte STR_ESC :byte STR_MODE :calc _jump_inst { str_process_kernel_sprite16 | 0x1000 } tobytes _jump_inst }
-		:macro S_MODE_TEXT { :byte STR_ESC :byte STR_MODE :calc _jump_inst { str_process_kernel_text | 0x1000 } tobytes _jump_inst }
 
 	: string_data
 
