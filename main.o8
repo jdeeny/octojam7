@@ -421,91 +421,109 @@
 
 	##endregion
 
-:macro set-state-handler handler { :calc _jump_inst { handler | 0x1000 } hilo _jump_inst v0 := hi v1 := lo i := state-handler-target save v0 - v1 }
+	##region(fold) State Handlers
+	:macro set-state-handler handler { :calc _jump_inst { handler | 0x1000 } hilo _jump_inst v0 := hi v1 := lo i := state-handler-target save v0 - v1 }
 
-: state-handler-splash
-	v0 := 0 if v0 key then state-set-gameplay
-	jump state-handler-return
+	: state-handler-splash
+		v0 := 0 if v0 key then state-set-gameplay
+		jump state-handler-return
 
-: state-set-splash
-	# Set the handler
-	set-state-handler state-handler-splash
+	: state-set-splash
+		# Set the handler
+		set-state-handler state-handler-splash
 
-	# Do things that happen once when switching
-	clear
-	i := long str_screenborder
-	str-process
+		# Do things that happen once when switching
+		clear
+		i := long str_screenborder
+		str-process
 
-	i := long str_test_text
-	str-process
-	;
+		i := long str_test_text
+		str-process
+		;
 
 
 
-: state-handler-gameplay
-	# undraw cursor
-	draw-cursor
+	: state-handler-gameplay
+		# undraw cursor
+		draw-cursor
 
-	# move cursor
-	i := key_data_updown
-	load v1
-	cy += v0
-	cx += v1
+		# move cursor
+		i := key_data_updown
+		load v1
+		cy += v0
+		cx += v1
 
-	if cx == 255 then cx := 0
-	if cx > MAP_WIDTH then cx := MAP_WIDTH
-	if cy == 255 then cy := 0
-	if cy > MAP_HEIGHT then cy := MAP_HEIGHT
-	draw-cursor
+		if cx == 255 then cx := 0
+		if cx > MAP_WIDTH then cx := MAP_WIDTH
+		if cy == 255 then cy := 0
+		if cy > MAP_HEIGHT then cy := MAP_HEIGHT
+		draw-cursor
 
-	# check other keys
-	v0 := OCTO_KEY_E
-	if v0 key begin
-		# mess with the map at the cursor position
+		# check other keys
+		v0 := OCTO_KEY_E
+		if v0 key begin
+			# mess with the map at the cursor position
 
-		# what pixel position?
-		set-times-7 v1 cx
-		v1 += 1
-		set-times-7 v2 cy
-		v2 += 1
+			# what pixel position?
+			set-times-7 v1 cx
+			v1 += 1
+			set-times-7 v2 cy
+			v2 += 1
 
-		# what buffer index?
-		set-times-16 v3 cy
-		v3 += cx
+			# what buffer index?
+			set-times-16 v3 cy
+			v3 += cx
 
-		# undraw what was there
-		i := buffer-world
-		i += v3
-		load v0
-		draw-sprite
+			# undraw what was there
+			i := buffer-world
+			i += v3
+			load v0
+			draw-sprite
 
-		# edit the map and draw the new thing
-		i := buffer-world
-		i += v3
-		if v0 == 255 begin
-			v0 := 0
-			save v0
-		else
-			v0 := 255
-			save v0
+			# edit the map and draw the new thing
+			i := buffer-world
+			i += v3
+			if v0 == 255 begin
+				v0 := 0
+				save v0
+			else
+				v0 := 255
+				save v0
+			end
+			draw-sprite
 		end
-		draw-sprite
-	end
-	jump state-handler-return
+		jump state-handler-return
 
 
-: state-set-gameplay
-	# Set the handler
-	set-state-handler state-handler-gameplay
+	: state-set-gameplay
+		# Set the handler
+		set-state-handler state-handler-gameplay
 
-	# Do things that happen once when switching
-	clear
-	draw-map
-	cx := 1
-	cy := 2
-	draw-cursor
-	;
+		# Do things that happen once when switching
+		clear
+		draw-map
+		cx := 1
+		cy := 2
+		draw-cursor
+		;
 
+	##endregion
+
+	##region Components
+	# A component defines data to be held by an entity
+	# eg Position x y
+	#	 Position16 x1 x2 y1 y2
+	#	 Velocity16 x1 x2 y1 y2
+	##endregion
+
+	##region Systems
+
+	# A system operates on a series of entities
+	#
+	# Need to find the appropriate entities
+	# Need to access the required data (components)
+
+	##endregion
 
 ##endregion Code and Near Data
 
@@ -700,6 +718,7 @@
 		S_END
 
 	##endregion
+
 
 # Some monitor fun
 
