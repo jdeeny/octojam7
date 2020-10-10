@@ -91,12 +91,15 @@
 	# Emit a 16-bit value into code
 	:macro tobytes value { hilo value :byte hi :byte lo }
 
-
+	# Emit a jump instruction to a given address
+	:macro emit-jump addr { :calc _jump_inst { addr | 0x1000 } tobytes _jump_inst }
 
 	# Convert milliseconds to the nearest number of frames (rounds down below 0.5)
 	:macro calc-frames-from-ms frames ms {
 		:calc frames { floor ( ( ( ms / 1000.0 ) / ( FRAME_DELAY / 60 ) ) + 0.5 ) }
 	}
+
+
 
 	##endregion
 
@@ -326,6 +329,8 @@
 		reg-set-i-v23
 		load v1
 
+		:breakpoint "Continue"
+
 		# If this is not an escape then jump to the processing kernel
 		# The target is is changed on the fly by the strings
 		if v0 != STR_ESC then : str_process_kernel_jump_target jump str-kernel-sprite8
@@ -399,18 +404,19 @@
 		jump str-process-next
 
 	# Macros for creating strings
-		:macro def-string name mode {
+		:macro def-string mode {
+			:calc _after_this { HERE + 4 }
+			emit-jump mode
+			tobytes _after_this
 		}
-		# Emit the address of the following data
-		:macro S_BEGIN { :calc _after_this { HERE + 2 } tobytes _after_this }
 		# Emits an escape and the END offset
 		:macro S_END { :byte STR_ESC :byte STR_END }
 		# Emits an escape, the LOC offset, and the x/y data
 		:macro S_LOC x y { :byte STR_ESC :byte STR_LOC :byte x :byte y }
 		# Emites an escape, the MODE offset, and an jump instruction to the appropriate kernel
-		:macro S_MODE_SPR8 { :byte STR_ESC :byte STR_MODE :calc _jump_inst { str-kernel-sprite8 | 0x1000 } tobytes _jump_inst }
-		:macro S_MODE_SPR16 { :byte STR_ESC :byte STR_MODE :calc _jump_inst { str-kernel-sprite16 | 0x1000 } tobytes _jump_inst }
-		:macro S_MODE_TEXT { :byte STR_ESC :byte STR_MODE :calc _jump_inst { str-kernel-text | 0x1000 } tobytes _jump_inst }
+		:macro S_MODE_SPR8 { :byte STR_ESC :byte STR_MODE emit-jump str-kernel-sprite8 }
+		:macro S_MODE_SPR16 { :byte STR_ESC :byte STR_MODE emit-jump str-kernel-sprite16 }
+		:macro S_MODE_TEXT { :byte STR_ESC :byte STR_MODE emit-jump str-kernel-text }
 
 
 
@@ -428,6 +434,7 @@
 
 	# Do things that happen once when switching
 	clear
+	:breakpoint "start border"
 	i := long str_screenborder
 	str-process
 
@@ -536,7 +543,7 @@
 	##region(fold) Sprite16 Data
 	: sprite16_data
 		:calc sprite16_count { 0 }
-		:macro def-sprite16 name { :assert "SPRITE16: Size / Data Mismatch" { ( sprite16_count * 64 ) == HERE - sprite16_data } :calc name { sprite16_count } :calc sprite16_count { sprite16_count + 1 } }
+		:macro def-sprite16 name { :assert "SPRITE16: Size / Data Mismatch" { ( sprite16_count * 64 ) == HERE - sprite16_data } :calc name { ( sprite16_count * 64 ) + sprite16_data } :calc sprite16_count { sprite16_count + 1 } }
 		def-sprite16 spr16_test1 0x80 0x01 0xC0 0xE1 0x61 0xF3 0x31 0xF2 0x08 0x06 0x04 0x0C 0x02 0x18 0x03 0x30 0x01 0xE0 0x01 0xC0 0x03 0x60 0x02 0x30 0x04 0x1C 0x39 0xC4 0x61 0xC2 0xC0 0x03 0x00 0x00 0x00 0xE0 0x01 0xF0 0x01 0xF0 0x00 0x00 0x00 0x00 0x00 0x00 0x70 0x00 0x70 0x07 0x70 0x07 0x00 0x00 0x00 0x00 0x00 0x00 0x01 0xC0 0x01 0xC0 0x00 0x00
 		def-sprite16 spr16_test2 0xF0 0x00 0xF7 0xF8 0xF7 0xA8 0x00 0xA8 0x00 0xA8 0x00 0xA8 0x07 0xA8 0x07 0xF8 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0xFF 0xFF 0xFF 0xFF 0x00 0x00 0x07 0xF8 0x07 0xA8 0x0F 0xA8 0x0F 0xA8 0x0F 0xA8 0x07 0xA8 0x07 0xF8 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0xFF 0xFF
 		def-sprite16 spr16_border_h 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0xFF 0xFF 0x00 0x00 0x00 0x00 0xFF 0xFF 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0xFF 0xFF 0xFF 0xFF 0xFF 0xFF 0xFF 0xFF 0xFF 0xFF 0xFF 0xFF 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00
@@ -545,17 +552,14 @@
 	##endregion
 
 	##region(fold) Font Data
-
-
     :calc GLYPH_MAX_WIDTH { 8 }         # Require that glyphs be this width or less
-
 	:calc glyph_count { 0 }
 
 	:macro def-glyph name letter r1 r2 r3 r4 r5 r6 r7 r8 {
 		:assert "Glyph: Size / Data Mismatch" { ( glyph_count * ( ( GLYPH_HEIGHT * 2 ) + 1 ) ) == ( HERE - glyph_data ) }
-		:calc name { glyph_count }
+		:calc name { HERE }
 		:stringmode Text letter {
-			:byte INDEX
+			tobytes name
 		}
 		:calc glyph_count { glyph_count + 1 }
 		:calc _glyph_composite { r1 | r2 | r3 | r4 | r5 | r6 | r7 | r8 }
@@ -623,60 +627,38 @@
 
 	##endregion
 
-
 	##region(fold) String Data
 
 	: string_data
-
 	: str_screenborder
-		S_BEGIN
+		def-string str-kernel-sprite16
 		S_LOC 248 248
-		S_MODE_SPR16
-		:byte spr16_border_c
-		:byte spr16_border_h
-		:byte spr16_border_h
-		:byte spr16_border_h
-		:byte spr16_border_h
-		:byte spr16_border_h
-		:byte spr16_border_h
-		:byte spr16_border_h
+		#S_MODE_SPR16
+		tobytes spr16_border_c
+		tobytes spr16_border_h
+		tobytes spr16_border_h
+		tobytes spr16_border_h
+		tobytes spr16_border_h
+		tobytes spr16_border_h
+		tobytes spr16_border_h
+		tobytes spr16_border_h
 		S_LOC 248 8
-		:byte spr16_border_v
+		tobytes  spr16_border_v
 		S_LOC 248 24
-		:byte spr16_border_v
+		tobytes spr16_border_v
 		S_LOC 248 40
-		:byte spr16_border_v
+		tobytes spr16_border_v
 		S_END
 
 	: str_test_text
-		S_BEGIN
+	def-string str-kernel-text
 		S_LOC 10 10
-		S_MODE_TEXT
-		Text "abe"
+		#S_MODE_TEXT
+		Text "Tentsabe"
 		S_END
 
-	: my_string
-		S_BEGIN
-		S_LOC 0 0
-		S_MODE_SPR8
-		:byte spr8_test1
-		S_END
-	: my_string_advanced
-		S_BEGIN
-		S_LOC 0 0
-		S_MODE_SPR8
-		:byte spr8_test1
-		:byte spr8_test1
-		:byte spr8_test2
-		:byte spr8_test2
-		S_LOC 10 20
-		:byte spr8_test2
-		S_MODE_SPR16
-		:byte spr16_test1
-		S_LOC 10 40
-		:byte spr16_test2
-		S_END
 	##endregion
 
-
+:monitor str_screenborder 40
+:monitor str_test_text 20
 ##endregion Far Data
