@@ -561,6 +561,7 @@
 		:stringmode Text letter {
 			tobytes name
 		}
+		:stringmode _Text-Width letter { :calc _str_width { _str_width + @ name } }
 		:calc glyph_count { glyph_count + 1 }
         :assert "Glyph too wide" { _glyph_width <= GLYPH_MAX_WIDTH }
 		:byte _glyph_width :byte r1 :byte r2 :byte r3 :byte r4 :byte r5 :byte r6 :byte r7 :byte r8 :byte r1 :byte r2 :byte r3 :byte r4 :byte r5 :byte r6 :byte r7 :byte r8
@@ -571,6 +572,36 @@
         :calc _glyph_width { 9 - ( log _glyph_composite & - _glyph_composite ) / log 2 }    # Magic formula from IJ
 		def-glyph-manual-width name letter _glyph_width r1 r2 r3 r4 r5 r6 r7 r8
 	}
+
+	:macro _calc-text-width output string {
+		:calc _str_width { 0 }
+		_Text-Width string
+		:calc output { _str_width }
+	}
+
+	:macro _calc-text-center output width string {
+		_calc-text-width _str_width string
+		:calc output { floor ( ( ( width - _str_width ) + 0.5 ) / 2 ) }
+	}
+
+	:macro _calc-text-center-between output left right string {
+		:calc _delta { right - left }
+		_calc-text-center output _delta string
+		:calc output { output + left }
+	}
+
+	:macro Text-Centered y string {
+		_calc-text-center _str_x 128 string
+		S_LOC _str_x y
+		Text string
+	}
+
+	:macro Text-Centered-Between left right y string {
+		_calc-text-center-between _str_x left right string
+		S_LOC _str_x y
+		Text string
+	}
+
 
 	: glyph_data
 	def-glyph glyph_A "A" 0x40 0xA0 0xA0 0xE0 0xA0 0xA0 0xA0 0x00
@@ -612,7 +643,7 @@
 	def-glyph glyph_k "k" 0x80 0x80 0xA0 0xC0 0xC0 0xA0 0xA0 0x00
 	def-glyph glyph_l "l" 0x80 0x80 0x80 0x80 0x80 0x80 0x40 0x00
 	def-glyph glyph_m "m" 0x00 0x00 0x00 0x00 0x50 0xA8 0x88 0x00
-	def-glyph glyph_n "n" 0x00 0x00 0x00 0x00 0xC0 0xA0 0xA0 0x00
+	def-glyph glyph_n "n" 0x00 0x00 0x00 0xE0 0xA0 0xA0 0xA0 0x00
 	def-glyph glyph_o "o" 0x00 0x00 0x00 0x40 0xA0 0xA0 0x40 0x00
 	def-glyph glyph_p "p" 0x00 0x00 0x40 0xA0 0xC0 0x80 0x80 0x00
 	def-glyph glyph_q "q" 0x00 0x00 0x40 0xA0 0x60 0x20 0x30 0x20
@@ -656,14 +687,11 @@
 
 	: str_test_text
 	def-string str-kernel-text
-		S_LOC 44 10
-		Text "WARNING!"
-		S_LOC 10 20
-		Text "This program makes use of sound."
-		S_LOC 10 30
-		Text "Turn down your audio output now."
-		S_LOC 20 50
-		Text "Press a key to continue"
+		Text-Centered 10 "WARNING!"
+		Text-Centered 20 "This program makes use of sound."
+		Text-Centered 30 "Octo sound is very loud, turn down"
+		Text-Centered 40 "your audio output now."
+		Text-Centered 50 "Press a key to continue"
 		S_MODE_SPR16
 		S_LOC 24 5
 		tobytes spr16_square_waves
@@ -680,6 +708,7 @@
 :calc _code_free { ( 0x1000 - 0x200 ) - _code_size }
 :calc _data_size { HERE - far_data_begins }
 :calc _free_size { 0xFFFF - HERE }
+
 
 :macro monitor-u16 name value { : name tobytes value :monitor name 2 }
 
