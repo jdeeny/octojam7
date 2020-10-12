@@ -45,9 +45,13 @@
 	# Font Config
 	:const GLYPH_HEIGHT 8
 
+	# Stack Config
+	:const SEG_STACK_START 0xFE00
+	:const SEG_STACK_END 0xFEFF
 	##endregion
 
 	##region(fold) Global Register Aliases
+	:alias SP vC	# Stack Pointer
 	:alias cx vD
 	:alias cy vE
 	##endregion
@@ -103,7 +107,7 @@
 
 	##endregion
 
-
+	
 	##region(fold) Key Handling
 	# Convert millisecond repeat times to frames
 	calc-frames-from-ms ARROW_REPEAT_RATE_FRAMES ARROW_REPEAT_RATE_MS
@@ -189,7 +193,79 @@
 		##endregion
 	##endregion
 
-##region(fold) Utility Functions
+	##region(fold) Data Stack
+
+	# stack-init		Initializes the stack by setting SP to 0
+	# push	vx vy		Save vx - vy to the stack, destroys I, increments SP
+	# pop vx vy			Load vx - vy from the stack, destroys I, decrements SP
+	# peek vx vy		Load vx - vy from the stack without changing SP, destroys I
+	# drop n			Drops n bytes from the stack, decrements SP
+	#
+	###
+
+	:calc stack_code_begins { HERE }
+	# Define the Stack Segment
+	:org SEG_STACK_START
+	: stack_start
+	:org SEG_STACK_END
+	: stack_end
+	:org stack_code_begins
+
+	:calc STACK_SIZE { ( SEG_STACK_END - SEG_STACK_START ) + 1 }
+	: stack-init SP := 0 ;
+	:calc STACK_SIZE { ( SEG_STACK_END - SEG_STACK_START ) + 1 }
+	:assert "Stack must be <= 256 bytes" { STACK_SIZE <= 256 }
+
+	:macro _stack_reg firstreg lastreg {
+		:assert "firstreg must be <= lastreg" { firstreg <= lastreg }
+		:calc _stack_bytes { ( lastreg - firstreg ) + 1 }
+		:calc _stack_decr { 0 - _stack_bytes }
+	}
+
+	:macro _stack_load_i {
+		i := long stack_start
+		i += SP
+	}
+
+	#:macro push firstreg lastreg bytes { stack_push SP mm_load_sp firstreg lastreg bytes }
+	:macro push firstreg lastreg {
+		_stack_reg firstreg lastreg
+		:check "peek: stack overflow" { ( _stack_bytes + SP ) > STACK_SIZE }
+		_stack_load_i
+		save firstreg - lastreg
+		SP += _stack_bytes
+	}
+	#:macro pop firstreg lastreg bytes { stack_pop SP mm_load_sp firstreg lastreg bytes }
+	:macro pop firstreg lastreg {
+		_stack_reg firstreg lastreg
+		:check "pop: stack underflow" { _stack_bytes > SP }
+		SP += _stack_decr
+		_stack_load_i
+		load firstreg - lastreg
+	}
+	#:macro stackpeek firstreg lastreg bytes { stack_peek SP mm_load_sp firstreg lastreg bytes }
+	:macro peek firstreg lastreg {
+		_stack_reg firstreg lastreg
+		:check "peek: stack underflow" { _stack_bytes > SP }
+		SP += _stack_decr
+		_stack_load_i
+		load firstreg - lastreg
+		SP += _stack_bytes
+	}
+	#:macro stackdrop bytes { stack_drop SP bytes }
+	:macro drop firstreg lastreg {
+		_stack_reg firstreg lastreg
+		:check "drop: stack underflow" { _stack_bytes > SP }
+		SP += _stack_decr
+	}
+
+
+
+
+	##endregion
+
+
+	##region(fold) Utility Functions
 	##region(fold) Set I = address in registers
 		# `reg-set-i-macro` creates a self modifying function that builds an `I = long v0 v1` instruction
 		:macro _reg-set-i-macro reg-hi reg-lo target { i := target save reg-hi - reg-lo 0xF0 0x00 : target 0x00 0x00 ; }
@@ -305,7 +381,6 @@
 
 	:alias str_x v4
 	:alias str_y v5
-
 	:macro str-display name {
 		:calc _str_address
 	}
@@ -358,6 +433,8 @@
 					i := str_process_kernel_jump_target
 					save v0 - v1
 					v0 := 4		# Advance 4 bytes
+					jump str-process-escape-next
+				: str_call  :calc STR_MODE { HERE - STR_ESC_TABLE } :assert "Table too large" { HERE - STR_ESC_TABLE <= 255 }
 					jump str-process-escape-next
 
 		# processing kernels return here
