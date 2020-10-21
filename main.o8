@@ -514,13 +514,13 @@
 		i := long str_screenborder
 		str-process
 
-		i := long str_test_text
+		i := long str_sound_warning
 		str-process
 		;
 
 
 	: state-handler-title
-		v0 := 0 if v0 key then state-set-gameplay
+		v0 := 1 if v0 key then state-set-gameplay
 		jump state-handler-return
 
 	: state-set-title
@@ -529,10 +529,8 @@
 
 		# Do things that happen once when switching
 		clear
-		i := long str_screenborder
-		str-process
 
-		i := long str_test_text
+		i := long str_titlescreen
 		str-process
 		;
 
@@ -549,7 +547,7 @@
 		i := long str_screenborder
 		str-process
 
-		i := long str_test_text
+		i := long str_sound_warning
 		str-process
 		;
 
@@ -566,7 +564,7 @@
 		i := long str_screenborder
 		str-process
 
-		i := long str_test_text
+		i := long str_sound_warning
 		str-process
 		;
 
@@ -583,7 +581,7 @@
 		i := long str_screenborder
 		str-process
 
-		i := long str_test_text
+		i := long str_sound_warning
 		str-process
 		;
 
@@ -824,6 +822,7 @@
 	def-glyph glyph_. "." 0x00 0x00 0x00 0x00 0x00 0x00 0x80 0x00
 	def-glyph glyph_, "," 0x00 0x00 0x00 0x00 0x00 0x00 0x80 0x80
 	def-glyph glyph_! "!" 0x80 0x80 0x80 0x80 0x80 0x00 0x80 0x00
+	def-glyph glyph_8 "8" 0x60 0x90 0x90 0x60 0x90 0x90 0x60 0x00 
 	def-glyph-manual-width glyph_space " " 2 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00
 
 	##endregion
@@ -849,13 +848,14 @@
 		S_LOC 248 40
 		tobytes spr16_border_v
 		S_END
+		S_END
 
-	: str_test_text
+	: str_sound_warning
 	def-string str-kernel-text
 		Text-Centered 10 "WARNING!"
-		Text-Centered 20 "This program makes use of sound."
-		Text-Centered 30 "Octo sound is very loud, turn down"
-		Text-Centered 40 "your audio output now."
+		Text-Centered 20 "Octo sound is very loud."
+		Text-Centered 28 "Turn down your"
+		Text-Centered 36 "audio output now."
 		Text-Centered 50 "Press Enter to continue"
 		S_MODE_SPR16
 		S_LOC 24 5
@@ -863,6 +863,14 @@
 		S_LOC 84 5
 		tobytes spr16_square_waves
 		S_END
+		S_END
+
+	: str_titlescreen
+	def-string str-kernel-text
+		Text-Centered 10 "8NGEL"
+		S_END
+		S_END
+
 
 	##endregion
 
