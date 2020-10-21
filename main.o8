@@ -786,7 +786,7 @@
 		Text-Centered 20 "This program makes use of sound."
 		Text-Centered 30 "Octo sound is very loud, turn down"
 		Text-Centered 40 "your audio output now."
-		Text-Centered 50 "Press a key to continue"
+		Text-Centered 50 "Press Enter to continue"
 		S_MODE_SPR16
 		S_LOC 24 5
 		tobytes spr16_square_waves
