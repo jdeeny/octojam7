@@ -495,6 +495,65 @@
 		:macro S_MODE_TEXT { :byte STR_ESC :byte STR_MODE emit-jump str-kernel-text }
 
 
+	# UI Handlers
+
+	: ui_state
+	0				# Active item offset
+	0				# Last item offset
+
+	:calc UI_GROUP_START_BYTES { 2 }
+	:calc UI_GROUP_ENTRY_BYTES { 2 }
+	:calc UI_GROUP_ENTRY_NEG { -2 } 
+
+	: _ui-load-group
+		:next ui_load_group_target i :=  long ui_group_title
+		;
+
+	# Set the ui group by modifying `_ui-load-group`
+	: ui-set-group
+		i := ui_load_group_target
+		save v0 - v1
+		;
+
+
+
+	# Begin displaying a UI group, display all items
+	# call with v0-v1 = ui group address
+	: ui-begin
+		# set the group address given in v0/v1
+		ui-set-group
+
+		# Save the initial settings from the group address
+		_ui-load-group	# set I = group
+		load v0 - v1
+		i := ui_state
+		save v0 - v1
+
+		# display all the things
+		;
+
+
+	# Navigate to the previous UI item
+	: ui-prev
+		i := ui_state
+		load v0 - v1
+		if v0 == UI_GROUP_ENTRY_BYTES then jump ui-prev-wrap
+		v0 += UI_GROUP_ENTRY_NEG
+		;
+	: ui-prev-wrap
+		v0 := v1
+		;
+
+	# Navigate to the next UI item
+	: ui-next
+		if v0 == v1 then jump ui-next-wrap
+		v0 += UI_GROUP_ENTRY_BYTES
+		;
+	: ui-next-wrap
+		v0 := UI_GROUP_START_BYTES
+		;
+
+
 
 	##endregion
 
@@ -980,12 +1039,17 @@
 	UI_BUTTON ui_credits_button str_credits_button_inactive str_credits_button_active state-set-credits
 
 
+	:macro _ui_calc_offset name entry_num { :calc name { UI_GROUP_START_BYTES + ( entry_num * UI_GROUP_ENTRY_BYTES ) } }
 
+	_ui_calc_offset ui_title_first 0
+	_ui_calc_offset ui_title_last 3
+		# Group of items making up a UI
 	: ui_group_title
-		3
+		:byte ui_title_first :byte ui_title_last
 		tobytes ui_edit_button
 		tobytes ui_play_button
 		tobytes ui_credits_button
+		:assert "wrong size" { ( HERE - ui_group_title ) != ( ui_title_last + UI_GROUP_ENTRY_BYTES ) }
 
 
 # Some monitor fun
