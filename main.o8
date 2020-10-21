@@ -586,6 +586,25 @@
 		;
 
 
+	: state-handler-help
+		v0 := 0 if v0 key then state-set-gameplay
+		jump state-handler-return
+
+	: state-set-help
+		# Set the handler
+		set-state-handler state-handler-help
+
+		# Do things that happen once when switching
+		clear
+		i := long str_screenborder
+		str-process
+
+		i := long str_helpscreen
+		str-process
+		;
+
+
+
 
 
 	: state-handler-gameplay
@@ -826,7 +845,9 @@
 	def-glyph glyph_. "." 0x00 0x00 0x00 0x00 0x00 0x00 0x80 0x00
 	def-glyph glyph_, "," 0x00 0x00 0x00 0x00 0x00 0x00 0x80 0x80
 	def-glyph glyph_! "!" 0x80 0x80 0x80 0x80 0x80 0x00 0x80 0x00
-	def-glyph glyph_8 "8" 0x60 0x90 0x90 0x60 0x90 0x90 0x60 0x00 
+	def-glyph glyph_8 "8" 0x60 0x90 0x90 0x60 0x90 0x90 0x60 0x00
+	def-glyph glyph_/ "/" 0x20 0x20 0x20 0x40 0x40 0x80 0x80 0x80
+	def-glyph glyph_: ":" 0x00 0x00 0x00 0x80 0x00 0x80 0x00 0x00
 	def-glyph-manual-width glyph_space " " 2 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00
 
 	##endregion
@@ -875,6 +896,55 @@
 		S_END
 		S_END
 
+	: str_helpscreen
+	def-string str-kernel-text
+		Text-Centered 10 "8NGEL Help"
+		Text-Centered 20 "Up/Down: "
+		S_END
+		S_END
+
+
+	: str_edit_button_inactive
+		def-string str-kernel-sprite16
+		S_LOC 20 20
+		tobytes spr16_menu_button_left
+		tobytes spr16_menu_button_right
+		S_MODE_TEXT
+		Text-Centered-Between 20 52 20 "Edit Track"
+		S_END
+		S_END
+
+	: str_edit_button_active
+		def-string str-kernel-sprite16
+		S_LOC 20 20
+		tobytes spr16_menu_button_left_active
+		tobytes spr16_menu_button_right_active
+		S_MODE_TEXT
+		Text-Centered-Between 20 52 20 "Edit Track"
+		S_END
+		S_END
+
+	: str_play_button_inactive
+		def-string str-kernel-sprite16
+		S_LOC 20 20
+		tobytes spr16_menu_button_left
+		tobytes spr16_menu_button_right
+		S_MODE_TEXT
+		Text-Centered-Between 20 52 20 "Playback"
+		S_END
+		S_END
+
+	: str_play_button_active
+		def-string str-kernel-sprite16
+		S_LOC 20 20
+		tobytes spr16_menu_button_left_active
+		tobytes spr16_menu_button_right_active
+		S_MODE_TEXT
+		Text-Centered-Between 20 52 20 "Playback"
+		S_END
+		S_END
+
+
 	: str_credits_button_inactive
 		def-string str-kernel-sprite16
 		S_LOC 20 20
@@ -905,7 +975,18 @@
 	:macro UI_BUTTON name inactive_string active_string handler {
 		: name tobytes inactive_string tobytes active_string tobytes handler
 	}
+	UI_BUTTON ui_edit_button str_edit_button_inactive str_edit_button_active state-set-gameplay
+	UI_BUTTON ui_play_button str_play_button_inactive str_play_button_active state-set-gameplay
 	UI_BUTTON ui_credits_button str_credits_button_inactive str_credits_button_active state-set-credits
+
+
+
+	: ui_group_title
+		3
+		tobytes ui_edit_button
+		tobytes ui_play_button
+		tobytes ui_credits_button
+
 
 # Some monitor fun
 
