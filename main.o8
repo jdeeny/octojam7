@@ -502,7 +502,7 @@
 	:macro set-state-handler handler { :calc _jump_inst { handler | 0x1000 } hilo _jump_inst v0 := hi v1 := lo i := state-handler-target save v0 - v1 }
 
 	: state-handler-splash
-		v0 := 0 if v0 key then state-set-gameplay
+		v0 := 0 if v0 key then state-set-title
 		jump state-handler-return
 
 	: state-set-splash
@@ -517,6 +517,76 @@
 		i := long str_test_text
 		str-process
 		;
+
+
+	: state-handler-title
+		v0 := 0 if v0 key then state-set-gameplay
+		jump state-handler-return
+
+	: state-set-title
+		# Set the handler
+		set-state-handler state-handler-title
+
+		# Do things that happen once when switching
+		clear
+		i := long str_screenborder
+		str-process
+
+		i := long str_test_text
+		str-process
+		;
+
+	: state-handler-credits
+		v0 := 0 if v0 key then state-set-title
+		jump state-handler-return
+
+	: state-set-credits
+		# Set the handler
+		set-state-handler state-handler-credits
+
+		# Do things that happen once when switching
+		clear
+		i := long str_screenborder
+		str-process
+
+		i := long str_test_text
+		str-process
+		;
+
+	: state-handler-menu
+		v0 := 0 if v0 key then state-set-gameplay
+		jump state-handler-return
+
+	: state-set-menu
+		# Set the handler
+		set-state-handler state-handler-menu
+
+		# Do things that happen once when switching
+		clear
+		i := long str_screenborder
+		str-process
+
+		i := long str_test_text
+		str-process
+		;
+
+	: state-handler-toolbox
+		v0 := 0 if v0 key then state-set-gameplay
+		jump state-handler-return
+
+	: state-set-toolbox
+		# Set the handler
+		set-state-handler state-handler-toolbox
+
+		# Do things that happen once when switching
+		clear
+		i := long str_screenborder
+		str-process
+
+		i := long str_test_text
+		str-process
+		;
+
 
 
 
