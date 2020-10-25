@@ -639,6 +639,8 @@
 		v1 += UI_QUEUE_ITEM_BYTES
 		save v1
 		# I is now incremented to ui_queue, add the write offset
+		vF := UI_QUEUE_MASK
+		v1 &= vF
 		i += v1
 		# Save the next item
 		save v2 - v3
