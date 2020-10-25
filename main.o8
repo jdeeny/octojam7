@@ -135,7 +135,7 @@
 			delay := vf
 			##endregion
 
-			##region(fold) Arrow Key Handler
+			##region Arrow Key Handler
 			# This stores up/down and left/right data in `key_data`
 			# Keys are debounced and stored as +/- 1, so other code should be able to use
 			# `key_data_updown` and `key_data_leftright` directly
@@ -177,17 +177,32 @@
 			save v0 - v2
 			##endregion
 
+			##region Sound Handler
+			# Decrement timer
+			# On timer expired
+			# Load next sample
+			# Set timer
+			##endregion
+
 			# Gamestate Handler
 			# The following jump is overwritten with a jump to the current state
 			: state-handler-target jump state-handler-splash
 			: state-handler-return
 
-		##region(fold) Framerate Lock Wait
-		loop
-			vf := delay
-			if vf != 0 then
-		again
-		##endregion
+
+			##region Framerate Lock Wait
+			loop
+				##region UI Updates
+				# UI Updates are performed in best-effort fashion during the frame lock wait
+
+				# Load next UI change from queue
+				# Process string
+				# If complete, remove from queue
+				##endregion
+				vf := delay
+				if vf != 0 then
+			again
+			##endregion
 
 		jump game-loop
 		##endregion
