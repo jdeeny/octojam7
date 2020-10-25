@@ -192,13 +192,8 @@
 
 			##region Framerate Lock Wait
 			loop
-				##region UI Updates
 				# UI Updates are performed in best-effort fashion during the frame lock wait
-
-				# Load next UI change from queue
-				# Process string
-				# If complete, remove from queue
-				##endregion
+				ui-update
 				vf := delay
 				if vf != 0 then
 			again
@@ -572,6 +567,84 @@
 
 	##endregion
 
+	##region UI
+
+	:calc UI_QUEUE_ENTRIES { 8 }
+	:calc UI_QUEUE_ITEM_BYTES { 2 }
+	:calc UI_QUEUE_BYTES { UI_QUEUE_ENTRIES * UI_QUEUE_ITEM_BYTES }
+	:calc UI_QUEUE_MASK { ( UI_QUEUE_BYTES - 1 ) & 0xFE }
+	:macro _ui_q_dummy { :byte 0x55 :byte 0x55 }
+	:macro _ui_q_dummyx4 { _ui_q_dummy _ui_q_dummy _ui_q_dummy _ui_q_dummy }
+	:macro _ui_q_dummyx8 { _ui_q_dummyx4 _ui_q_dummyx4 }
+
+	: ui_queue_state
+		0 	# read location
+		0	# write location
+	: ui_queue	# Storage for the queue
+		_ui_q_dummyx8
+	:assert "Queue size doesn't match ENTRIES * BYTES" { ( HERE - ui_queue ) == UI_QUEUE_BYTES }
+
+	:monitor ui_queue_state 2
+	:monitor ui_queue UI_QUEUE_BYTES
+
+	# queue size: write - read
+	# queue full: size == capacity
+	# queue empty: read == write
+
+	# If there are pending UI updates, make progress on the current one
+	: ui-update
+		# Load the queue read/write locations to v0-v1 and increment I to ui_queue
+		i := ui_queue_state
+		load v1
+		# If the queue is empty, we are done
+		if v0 == v1 then return
+		# Load I with the next item in the queue
+		vF := UI_QUEUE_MASK
+		v0 &= vF
+		i += v0
+		load v0 - v1
+		reg-set-i-v01
+		# Process string
+		str-process
+		# If complete, remove from queue
+		# str-process returns with ?? set when it finishes
+		# Remove from queue by incrementing the read location
+		i := ui_queue_state
+		load v0 - v0
+		v0 += 2
+		save v0
+		;
+
+	# Clear the ui queue, for example a screen clear invalidates everytime in process
+	: ui-flush
+		# We save whatever is in v0 to the queue state, as long as they are the same it is empty
+		i := ui_queue_state
+		save v0
+		save v0
+		;
+	
+	# Add something to the ui queue
+	# address in v2/v3
+	: ui-push
+		i := ui_queue_state
+		load v0 - v1
+		
+		# Fast: Use a :check to ensure we never overflow the queue
+		:check { ( v1 - v0 ) != UI_QUEUE_BYTES }
+		# Slow: Find the size of the queue (write - read) and if we are full return
+		v0 -= v1
+		if v0 == UI_QUEUE_BYTES then return
+
+		# Increment the write location and save it
+		v1 += UI_QUEUE_ITEM_BYTES
+		save v1
+		# I is now incremented to ui_queue, add the write offset
+		i += v1
+		# Save the next item
+		save v2 - v3
+		;
+	##endregion
+
 	##region(fold) State Handlers
 	:macro set-state-handler handler { :calc _jump_inst { handler | 0x1000 } hilo _jump_inst v0 := hi v1 := lo i := state-handler-target save v0 - v1 }
 
@@ -585,6 +658,15 @@
 
 		# Do things that happen once when switching
 		clear
+#		hilo str_screenborder
+#		v2 := hi
+#		v3 := lo
+#		ui-push
+
+#		hilo str_sound_warning
+#		v2 := hi
+#		v3 := lo
+#		ui-push
 		i := long str_screenborder
 		str-process
 
@@ -744,22 +826,6 @@
 		cy := 2
 		draw-cursor
 		;
-
-	##endregion
-
-	##region Components
-	# A component defines data to be held by an entity
-	# eg Position x y
-	#	 Position16 x1 x2 y1 y2
-	#	 Velocity16 x1 x2 y1 y2
-	##endregion
-
-	##region Systems
-
-	# A system operates on a series of entities
-	#
-	# Need to find the appropriate entities
-	# Need to access the required data (components)
 
 	##endregion
 
